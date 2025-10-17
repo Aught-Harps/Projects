@@ -1,0 +1,49 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// LCD setup
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// MQ-135 analog pin
+#define MQ135_PIN PA0  // change to your ADC pin
+
+void setup() {
+  // Start Serial
+  Serial.begin(9600);
+  delay(500);
+  Serial.println("Serial Started...");
+
+  // Init LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Print header
+  lcd.setCursor(0, 0);
+  lcd.print("Hello STM32");
+  Serial.println("Hello STM32");
+
+  lcd.setCursor(0, 1);
+  lcd.print("LCD + Serial");
+  Serial.println("LCD + Serial");
+}
+
+void loop() {
+  // Read MQ-135 analog value
+  int mq135Value = analogRead(MQ135_PIN);
+
+  // Optional: convert to voltage if needed
+  float voltage = mq135Value * (5.0 / 4095.0);  // STM32 ADC default 12-bit: 0-4095
+
+  // Print to Serial
+  Serial.print("MQ-135 ADC: "); Serial.print(mq135Value);
+  Serial.print("\tVoltage: "); Serial.println(voltage, 2);
+
+  // Print to LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MQ-135 ADC:");
+  lcd.setCursor(0, 1);
+  lcd.print(mq135Value);
+
+  delay(1000);
+}
