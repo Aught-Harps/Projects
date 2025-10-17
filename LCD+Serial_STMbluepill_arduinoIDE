@@ -1,0 +1,32 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// Change to 0x3F if 0x27 doesn't work
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+void setup() {
+  // Start Serial
+  Serial.begin(9600);
+  delay(500);
+  Serial.println("Serial Started...");
+
+  // Init LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Print on both
+  lcd.setCursor(0, 0);
+  lcd.print("Hello STM32");
+  Serial.println("Hello STM32");
+
+  lcd.setCursor(0, 1);
+  lcd.print("LCD + Serial");
+  Serial.println("LCD + Serial");
+}
+
+void loop() {
+  // Optional loop output
+  Serial.println("Running...");
+  delay(1000);
+}
+
