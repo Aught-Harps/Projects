@@ -1,0 +1,93 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// --- LCD setup ---
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// --- MQ sensors analog pins ---
+#define MQ135_PIN PA0
+#define MQ4_PIN   PA2
+
+// --- LED indicator pin ---
+#define ALERT_LED PC13
+
+// --- Thresholds ---
+#define MQ135_THRESHOLD 1500
+#define MQ4_THRESHOLD   1500
+
+// --- Simulated weather variables ---
+float temperature = 27.0;
+float humidity = 85.0;
+
+void setup() {
+  Serial.begin(9600);
+  delay(500);
+  Serial.println("Serial Started...");
+
+  // Init LCD
+  lcd.init();
+  lcd.backlight();
+
+  // LED setup
+  pinMode(ALERT_LED, OUTPUT);
+  digitalWrite(ALERT_LED, LOW);
+
+  // Startup message
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MQ Sensors + Sim");
+  lcd.setCursor(0, 1);
+  lcd.print("Manipal Weather");
+  delay(1500);
+}
+
+void loop() {
+  // --- Read MQ sensors ---
+  int mq135Value = analogRead(MQ135_PIN);
+  int mq4Value   = analogRead(MQ4_PIN);
+
+  // --- Generate fake Manipal morning weather ---
+  // add small random variations for realism
+  temperature += random(-10, 10) * 0.05; // ±0.5°C
+  humidity    += random(-5, 5) * 0.2;    // ±1%
+
+  // Clamp within realistic range
+  if (temperature < 24) temperature = 24;
+  if (temperature > 30) temperature = 30;
+  if (humidity < 70) humidity = 70;
+  if (humidity > 95) humidity = 95;
+
+  // --- Serial output ---
+  Serial.print("CO2: "); Serial.print(mq135Value);
+  Serial.print("  |  Methane: "); Serial.print(mq4Value);
+  Serial.print("  |  Temp: "); Serial.print(temperature, 1);
+  Serial.print("°C  |  Humidity: "); Serial.print(humidity, 1);
+  Serial.println("%");
+
+  // --- LCD output ---
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("T:"); lcd.print(temperature, 0);
+  lcd.print("C H:"); lcd.print(humidity, 0);
+  lcd.print("%");
+
+  lcd.setCursor(0, 1);
+  lcd.print("C:"); lcd.print(mq135Value);
+  lcd.print(" M:"); lcd.print(mq4Value);
+
+  // --- Alerts ---
+  bool alert = false;
+
+  if (mq135Value == 0 || mq4Value == 0) {
+    Serial.println("ALERT: Sensor not detected!");
+    alert = true;
+  }
+  else if (mq135Value > MQ135_THRESHOLD || mq4Value > MQ4_THRESHOLD) {
+    Serial.println("ALERT: High gas concentration!");
+    alert = true;
+  }
+
+  digitalWrite(ALERT_LED, alert ? HIGH : LOW);
+
+  delay(1000);
+}
