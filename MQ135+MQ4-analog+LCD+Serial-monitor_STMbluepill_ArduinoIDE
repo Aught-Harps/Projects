@@ -1,0 +1,81 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// LCD setup
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// MQ-135 and MQ-4 analog pins
+#define MQ135_PIN PA0
+#define MQ4_PIN   PA2
+
+// LED indicator pin (built-in LED on PC13)
+#define ALERT_LED PC13
+
+// Threshold values (tweak after testing)
+#define MQ135_THRESHOLD 1500
+#define MQ4_THRESHOLD   1500
+
+void setup() {
+  Serial.begin(9600);
+  delay(500);
+  Serial.println("Serial Started...");
+
+  // LCD init
+  lcd.init();
+  lcd.backlight();
+
+  // LED setup
+  pinMode(ALERT_LED, OUTPUT);
+  digitalWrite(ALERT_LED, LOW);
+
+  // Startup message
+  lcd.setCursor(0, 0);
+  lcd.print("MQ Sensors Init");
+  lcd.setCursor(0, 1);
+  lcd.print("STM32 Blue Pill");
+  Serial.println("MQ Sensors Ready!");
+  delay(1500);
+}
+
+void loop() {
+  // --- Read MQ sensors ---
+  int mq135Value = analogRead(MQ135_PIN);
+  int mq4Value   = analogRead(MQ4_PIN);
+
+  // Convert to voltage
+  float mq135Voltage = mq135Value * (5.0 / 4095.0);
+  float mq4Voltage   = mq4Value   * (5.0 / 4095.0);
+
+  // --- Serial output ---
+  Serial.print("MQ-135 ADC: "); Serial.print(mq135Value);
+  Serial.print(" ("); Serial.print(mq135Voltage, 2); Serial.print("V)");
+  Serial.print("\t| MQ-4 ADC: "); Serial.print(mq4Value);
+  Serial.print(" ("); Serial.print(mq4Voltage, 2); Serial.print("V)");
+  Serial.println();
+
+  // --- LCD output ---
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("135:"); lcd.print(mq135Value);
+  lcd.print("  4:"); lcd.print(mq4Value);
+
+  lcd.setCursor(0, 1);
+  lcd.print("V1:"); lcd.print(mq135Voltage, 1);
+  lcd.print(" V2:"); lcd.print(mq4Voltage, 1);
+
+  // --- Alert conditions ---
+  bool alert = false;
+
+  if (mq135Value == 0 || mq4Value == 0) {
+    Serial.println("ALERT: Sensor not detected!");
+    alert = true;
+  }
+  else if (mq135Value > MQ135_THRESHOLD || mq4Value > MQ4_THRESHOLD) {
+    Serial.println("ALERT: High gas concentration!");
+    alert = true;
+  }
+
+  digitalWrite(ALERT_LED, alert ? HIGH : LOW);
+
+  delay(1000);
+}
