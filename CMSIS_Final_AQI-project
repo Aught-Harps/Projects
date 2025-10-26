@@ -1,0 +1,191 @@
+/* -------------------------------------------------------
+ * STM32F103C6T6 CMSIS Code
+ * MQ Sensors + BME680 + LCD Display
+ * ------------------------------------------------------*/
+
+#include "stm32f10x.h"
+#include <stdio.h>
+
+/* --- I2C Addresses --- */
+#define LCD_ADDR   (0x27 << 1)
+#define BME680_ADDR (0x76 << 1) // If your module uses 0x77, change here
+
+/* --- ADC Inputs --- */
+#define MQ135_CH   0     // PA0
+#define MQ4_CH     2     // PA2
+
+/* --- LED Pin (Active Low on Blue Pill) --- */
+#define ALERT_LED_PIN 13
+
+/* --- Thresholds --- */
+#define MQ135_THRESHOLD 1500
+#define MQ4_THRESHOLD   1500
+
+/* --- BME680 Registers --- */
+#define BME680_REG_TEMP_MSB 0x22
+#define BME680_REG_CTRL_MEAS 0x74
+#define BME680_REG_CTRL_HUM  0x72
+#define BME680_REG_CTRL_GAS1 0x71
+
+/* --- Function Declarations --- */
+void Clock_Config(void);
+void GPIO_Config(void);
+void ADC_Config(void);
+void I2C_Config(void);
+
+uint16_t ADC_Read(uint8_t channel);
+
+/* BME680 functions */
+void BME680_Init(void);
+void BME680_StartRead(void);
+void BME680_ReadData(float *temp, float *hum, float *gas);
+
+/* LCD functions */
+void LCD_Init(void);
+void LCD_SendCmd(uint8_t cmd);
+void LCD_SendData(uint8_t data);
+void LCD_Print(char *str);
+void LCD_SetCursor(uint8_t col, uint8_t row);
+void LCD_Clear(void);
+
+void I2C_Start(uint8_t addr);
+void I2C_WriteByte(uint8_t data);
+uint8_t I2C_ReadByte_ACK(void);
+uint8_t I2C_ReadByte_NACK(void);
+void I2C_Stop(void);
+
+void delay_ms(uint32_t ms);
+
+
+/* -------------------------------------------------------
+ * Main Program
+ * ------------------------------------------------------*/
+int main(void) {
+
+    Clock_Config();
+    GPIO_Config();
+    ADC_Config();
+    I2C_Config();
+    LCD_Init();
+    BME680_Init();
+    LCD_Clear();
+
+    LCD_SetCursor(0,0);
+    LCD_Print("MQ + BME680");
+    LCD_SetCursor(0,1);
+    LCD_Print("Real Sensors :)");
+    delay_ms(1500);
+
+    while (1) {
+
+        int mq135 = ADC_Read(MQ135_CH);
+        int mq4   = ADC_Read(MQ4_CH);
+
+        float temp, hum, gas;
+        BME680_ReadData(&temp, &hum, &gas);
+
+        char line[16];
+
+        LCD_Clear();
+        sprintf(line,"T:%dC H:%d%%",(int)temp,(int)hum);
+        LCD_SetCursor(0,0);
+        LCD_Print(line);
+
+        sprintf(line,"G:%d M:%d",(int)gas, mq4);
+        LCD_SetCursor(0,1);
+        LCD_Print(line);
+
+        int alert = 0;
+        if(mq135==0 || mq4==0) alert=1;
+        if(mq135>MQ135_THRESHOLD || mq4>MQ4_THRESHOLD) alert=1;
+        if(alert)
+            GPIOC->ODR &= ~(1<<ALERT_LED_PIN);
+        else
+            GPIOC->ODR |=  (1<<ALERT_LED_PIN);
+
+        delay_ms(1000);
+    }
+}
+
+
+/* -------------------------------------------------------
+ * BME680 Config + Read
+ * ------------------------------------------------------*/
+void BME680_Init(void) {
+    /* Basic config. Oversampling x1 for temp & humidity */
+    I2C_Start(BME680_ADDR);
+    I2C_WriteByte(BME680_REG_CTRL_HUM);
+    I2C_WriteByte(0x01); // Humidity OS 1x
+    I2C_Stop();
+
+    I2C_Start(BME680_ADDR);
+    I2C_WriteByte(BME680_REG_CTRL_MEAS);
+    I2C_WriteByte(0x25); // Temp OS 1x + Normal mode
+    I2C_Stop();
+
+    I2C_Start(BME680_ADDR);
+    I2C_WriteByte(BME680_REG_CTRL_GAS1);
+    I2C_WriteByte(0x20); // Gas Enable
+    I2C_Stop();
+}
+
+void BME680_ReadData(float *temp, float *hum, float *gas) {
+
+    /* Select MSB register */
+    I2C_Start(BME680_ADDR);
+    I2C_WriteByte(BME680_REG_TEMP_MSB);
+    I2C_Stop();
+
+    /* Read 8 bytes raw */
+    I2C_Start(BME680_ADDR | 0x01);
+    uint8_t t_msb = I2C_ReadByte_ACK();
+    uint8_t t_lsb = I2C_ReadByte_ACK();
+    uint8_t t_xlsb= I2C_ReadByte_ACK();
+    uint8_t h_msb = I2C_ReadByte_ACK();
+    uint8_t h_lsb = I2C_ReadByte_ACK();
+    uint8_t g_msb = I2C_ReadByte_ACK();
+    uint8_t g_lsb = I2C_ReadByte_NACK();
+    I2C_Stop();
+
+    /* Simple conversion (not fully calibrated) */
+    uint32_t t_raw = (t_msb<<12)|(t_lsb<<4)|(t_xlsb>>4);
+    uint16_t h_raw = (h_msb<<8)|h_lsb;
+    uint16_t g_raw = (g_msb<<8)|g_lsb;
+
+    *temp = t_raw / 100.0f; // Placeholder scaling
+    *hum  = h_raw / 1024.0f * 100.0f;
+    *gas  = g_raw;
+}
+
+
+/* -------------------------------------------------------
+ * BASIC I2C Functions (short version)
+ * ------------------------------------------------------*/
+void I2C_Start(uint8_t addr) {
+    I2C1->CR1 |= I2C_CR1_START;
+    while(!(I2C1->SR1 & I2C_SR1_SB));
+    I2C1->DR = addr;
+    while(!(I2C1->SR1 & I2C_SR1_ADDR));
+    (void)I2C1->SR2;
+}
+
+void I2C_WriteByte(uint8_t data) {
+    while(!(I2C1->SR1 & I2C_SR1_TXE));
+    I2C1->DR = data;
+    while(!(I2C1->SR1 & I2C_SR1_BTF));
+}
+
+uint8_t I2C_ReadByte_ACK(void) {
+    I2C1->CR1 |= I2C_CR1_ACK;
+    while(!(I2C1->SR1 & I2C_SR1_RXNE));
+    return I2C1->DR;
+}
+
+uint8_t I2C_ReadByte_NACK(void) {
+    I2C1->CR1 &= ~I2C_CR1_ACK;
+    while(!(I2C1->SR1 & I2C_SR1_RXNE));
+    I2C1->CR1 |= I2C_CR1_STOP;
+    return I2C1->DR;
+}
+
+void I2C_Stop(void) { I2C1->CR1 |= I2C_CR1_STOP; }
